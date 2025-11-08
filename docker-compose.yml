@@ -1,0 +1,79 @@
+services:
+  # Base de datos PostgreSQL
+  db:
+    image: postgres:17-alpine  # ✅ Cambiar de 15 a 17
+    container_name: smart-ops-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: smartsolution_development
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: admin123
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - node-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d smartsolution_development"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Backend API (sin cambios)
+  back-end:
+    build:
+      context: ./smart-ops-backend
+      dockerfile: Dockerfile
+    container_name: smart-ops-backend
+    working_dir: /app
+    environment:
+      - NODE_ENV=dev  
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=smartsolution_development
+      - DB_USER=postgres
+      - DB_PASSWORD=admin123
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./smart-ops-backend:/app
+      - backend_node_modules:/app/node_modules
+    networks:
+      - node-network
+    depends_on:
+      db:
+        condition: service_healthy
+    command: npm run dev
+
+  # Frontend React (sin cambios)
+  front-end:
+    build:
+      context: ./smart-ops-frontend
+      dockerfile: Dockerfile
+    container_name: smart-ops-frontend
+    working_dir: /app
+    environment:
+      - VITE_API_URL=http://localhost:5000/api
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./smart-ops-frontend:/app
+      - frontend_node_modules:/app/node_modules
+    networks:
+      - node-network
+    depends_on:
+      - back-end
+    command: npm run dev
+
+volumes:
+  postgres_data:
+    driver: local
+  backend_node_modules:
+    driver: local
+  frontend_node_modules:
+    driver: local
+
+networks:
+  node-network:
+    driver: bridge
