@@ -4,7 +4,3 @@
 [submodule "smart-ops-frontend"]
 	path = smart-ops-frontend
 	url = https://github.com/vmestrada88/smart-ops-frontend.git
-[submodule "smart-ops-mobile"]
-	path = smart-ops-mobile
-	url = https://github.com/vmestrada88/smart-ops-mobile.git
-	branch = dev
