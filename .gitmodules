@@ -1,6 +1,7 @@
 [submodule "smart-ops-backend"]
 	path = smart-ops-backend
 	url = https://github.com/vmestrada88/smart-ops-backend.git
+	branch = production
 [submodule "smart-ops-frontend"]
 	path = smart-ops-frontend
 	url = https://github.com/vmestrada88/smart-ops-frontend.git
