@@ -55,9 +55,9 @@ services:
         - CYPRESS_INSTALL_BINARY=0
     container_name: smart-ops-frontend
     environment:
-      - VITE_API_URL=http://18.117.176.49:5000/api
+      - VITE_API_URL=http://smartsolutionfl.com/api
     ports:
-      - "80:80"
+      - "8080:80"
     networks:
       - node-network
     depends_on:
