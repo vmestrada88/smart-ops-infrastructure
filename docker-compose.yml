@@ -5,7 +5,7 @@ services:
     container_name: smart-ops-db
     restart: unless-stopped
     environment:
-      POSTGRES_DB: smartsolution_development
+      POSTGRES_DB: smartsolution_production
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: admin123
     ports:
@@ -15,7 +15,7 @@ services:
     networks:
       - node-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d smartsolution_development"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d smartsolution_production"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -28,10 +28,10 @@ services:
     container_name: smart-ops-backend
     working_dir: /app
     environment:
-      - NODE_ENV=dev  
+      - NODE_ENV=production  
       - DB_HOST=db
       - DB_PORT=5432
-      - DB_NAME=smartsolution_development
+      - DB_NAME=smartsolution_production
       - DB_USER=postgres
       - DB_PASSWORD=admin123
     ports:
