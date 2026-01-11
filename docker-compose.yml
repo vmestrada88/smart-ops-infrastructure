@@ -52,10 +52,8 @@ services:
       context: ./smart-ops-frontend
       dockerfile: Dockerfile
       args:
-        - CYPRESS_INSTALL_BINARY=0
+        - VITE_API_URL=https://smartsolutionfl.com/api
     container_name: smart-ops-frontend
-    environment:
-      - VITE_API_URL=https://smartsolutionfl.com/api
     ports:
       - "8080:80"
     networks:
