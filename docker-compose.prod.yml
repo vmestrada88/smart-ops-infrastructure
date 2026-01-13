@@ -32,6 +32,7 @@ services:
       - DB_USER=postgres
       - DB_PASSWORD=admin123
       - DB_SSL=false
+      - JWT_SECRET=your-super-secret-jwt-key-change-in-production-2026
       - FRONTEND_URLS=https://smartsolutionfl.com,http://smartsolutionfl.com
     ports:
       - "5000:5000"
