@@ -43,9 +43,19 @@ else
     echo "⚠️  No database backup found, skipping restore"
 fi
 
-# Reconstruir y levantar todos los servicios
-echo "🔨 Building and starting services..."
-docker compose -f docker-compose.prod.yml up -d --build
+# Login to GHCR if credentials provided (GHCR_TOKEN and GHCR_USER)
+if [ -n "$GHCR_TOKEN" ] && [ -n "$GHCR_USER" ]; then
+  echo "🔐 Logging in to GHCR..."
+  echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+else
+  echo "⚠️  GHCR credentials not set; attempting anonymous pulls (may fail for private images)"
+fi
+
+# Pull images and start services
+echo "🔨 Pulling images and starting services..."
+docker compose -f docker-compose.prod.yml pull || true
+# Use no-build to ensure we don't try to build on the server
+docker compose -f docker-compose.prod.yml up -d --no-build
 
 # Esperar a que los servicios estén listos
 echo "⏳ Waiting for services to be ready..."
