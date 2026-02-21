@@ -19,13 +19,20 @@ echo "📥 Pulling latest code from production branch..."
 git checkout production
 git pull origin production
 
+# Verificar variables de entorno de producción
+if [ ! -f .env ]; then
+  echo "❌ Missing .env file in $(pwd)"
+  echo "Create it from .env.example and set production secrets before deploy"
+  exit 1
+fi
+
 # Actualizar submodules
 echo "📦 Updating submodules..."
 git submodule update --init --recursive
 git submodule foreach 'git checkout production && git pull origin production'
 
 # Restaurar backup de base de datos si existe
-if [ -f ~/db_backup_*.sql ]; then
+if ls ~/db_backup_*.sql >/dev/null 2>&1; then
     echo "💾 Restoring database backup..."
     
     # Iniciar solo la base de datos
@@ -37,7 +44,7 @@ if [ -f ~/db_backup_*.sql ]; then
     echo "Using backup: $BACKUP_FILE"
     
     # Restaurar backup
-    docker exec -i smart-ops-db psql -U postgres -d smartsolution_development < "$BACKUP_FILE"
+    docker exec -i smart-ops-db psql -U postgres -d smartsolution_production < "$BACKUP_FILE"
     echo "✅ Database restored"
 else
     echo "⚠️  No database backup found, skipping restore"
