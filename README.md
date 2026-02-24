@@ -22,3 +22,23 @@ chmod +x deploy.sh ec2-update.sh setup-nginx.sh setup-ssl.sh
 ```
 
 Guía completa: ver `deploy-ec2.md`.
+
+## Deploy automático a EC2 (GitHub Actions)
+
+Este repo incluye el workflow `deploy-production-ec2.yml` que se ejecuta en:
+
+- push a la rama `production`
+- ejecución manual (`workflow_dispatch`)
+
+Para habilitarlo, configura estos secretos en GitHub (repo `smart-ops-infrastructure`):
+
+- `EC2_HOST` (ejemplo: IP pública o dominio del servidor)
+- `EC2_USER` (ejemplo: `ubuntu`)
+- `EC2_SSH_PRIVATE_KEY` (llave privada PEM, contenido completo)
+
+Opcionales:
+
+- `EC2_SSH_PORT` (por defecto `22`)
+- `EC2_APP_DIR` (por defecto `~/smart-ops-infrastructure`)
+
+El workflow hace SSH al servidor y ejecuta `./deploy.sh` en `production`.
