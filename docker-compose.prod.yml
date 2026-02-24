@@ -32,6 +32,7 @@ services:
       - DB_PASSWORD=${DB_PASSWORD}
       - DB_SSL=${DB_SSL}
       - JWT_SECRET=${JWT_SECRET}
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
       - FRONTEND_URLS=${FRONTEND_URLS}
     ports:
       - "5000:5000"
