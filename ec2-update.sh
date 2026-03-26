@@ -29,7 +29,7 @@ fi
 # Actualizar submodules
 echo "📦 Updating submodules..."
 git submodule update --init --recursive
-git submodule foreach 'git checkout production && git pull origin production'
+git submodule foreach 'git checkout production && git fetch origin && git reset --hard origin/production'
 
 # Restaurar backup de base de datos si existe
 if ls ~/db_backup_*.sql >/dev/null 2>&1; then
