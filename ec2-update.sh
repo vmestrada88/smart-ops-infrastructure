@@ -19,8 +19,9 @@ docker system prune -af --volumes 2>/dev/null || true
 echo "   Disk after cleanup: $(df -h / | tail -1 | awk '{print $5 " used, " $4 " free"}')"
 # Actualizar código desde GitHub (branch production)
 echo "📥 Pulling latest code from production branch..."
+git fetch origin production
 git checkout production
-git pull origin production
+git reset --hard origin/production
 
 # Verificar variables de entorno de producción
 if [ ! -f .env ]; then

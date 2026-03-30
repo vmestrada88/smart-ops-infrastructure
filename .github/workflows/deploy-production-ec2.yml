@@ -59,8 +59,9 @@ jobs:
             export GHCR_TOKEN='$GHCR_TOKEN'
             export GHCR_USER='$GHCR_USER'
             cd $APP_DIR
+            git fetch origin production
             git checkout production
-            git pull origin production
+            git reset --hard origin/production
             chmod +x deploy.sh ec2-update.sh
             ./deploy.sh
           "
