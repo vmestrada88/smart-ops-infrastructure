@@ -13,7 +13,10 @@ echo "======================================"
 echo "🛑 Stopping current containers..."
 cd ~/smart-ops-infrastructure
 docker compose -f docker-compose.prod.yml down || true
-
+# Liberar espacio en disco antes de build/pull
+echo "🧹 Cleaning up unused Docker resources..."
+docker system prune -af --volumes 2>/dev/null || true
+echo "   Disk after cleanup: $(df -h / | tail -1 | awk '{print $5 " used, " $4 " free"}')"
 # Actualizar código desde GitHub (branch production)
 echo "📥 Pulling latest code from production branch..."
 git checkout production
