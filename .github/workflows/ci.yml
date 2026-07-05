@@ -2,9 +2,9 @@ name: Infrastructure CI
 
 on:
   pull_request:
-    branches: [dev, test, stage, production]
+    branches: [dev, test, staging, production]
   push:
-    branches: [dev, test, stage, production]
+    branches: [dev, test, staging, production]
 
 jobs:
   validate:
