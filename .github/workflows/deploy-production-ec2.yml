@@ -3,7 +3,18 @@ name: Deploy Production to EC2
 on:
   push:
     branches: [production]
+  # Lo disparan también smart-ops-backend y smart-ops-frontend al publicar su imagen
   workflow_dispatch:
+    inputs:
+      service:
+        description: "Qué desplegar"
+        type: choice
+        options: [all, back-end, front-end]
+        default: all
+      image_tag:
+        description: "Etiqueta de imagen (production o un SHA)"
+        type: string
+        default: production
 
 concurrency:
   group: deploy-production-ec2
@@ -50,9 +61,13 @@ jobs:
           EC2_APP_DIR: ${{ secrets.EC2_APP_DIR }}
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
           GHCR_USER: vmestrada88
+          SERVICE: ${{ inputs.service || 'all' }}
+          IMAGE_TAG: ${{ inputs.image_tag || 'production' }}
         run: |
           PORT="${EC2_SSH_PORT:-22}"
           APP_DIR="${EC2_APP_DIR:-~/smart-ops-infrastructure}"
+          case "$SERVICE" in all|back-end|front-end) ;; *) echo "Invalid service"; exit 1 ;; esac
+          [[ "$IMAGE_TAG" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "Invalid image tag"; exit 1; }
 
           ssh -o BatchMode=yes -p "$PORT" "$EC2_USER@$EC2_HOST" "
             set -e
@@ -63,7 +78,7 @@ jobs:
             git checkout production
             git reset --hard origin/production
             chmod +x deploy.sh ec2-update.sh
-            ./deploy.sh
+            SERVICE='$SERVICE' IMAGE_TAG='$IMAGE_TAG' SKIP_GIT_PULL=true ./deploy.sh
           "
 
       - name: Verify API health from EC2
