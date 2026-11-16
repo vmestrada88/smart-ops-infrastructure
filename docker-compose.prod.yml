@@ -7,8 +7,9 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    # Solo accesible desde el propio servidor (no expuesto a internet)
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
@@ -20,7 +21,7 @@ services:
       retries: 3
 
   back-end:
-    image: ghcr.io/vmestrada88/smart-ops-back-end:production
+    image: ghcr.io/vmestrada88/smart-ops-back-end:${BACKEND_TAG:-production}
     container_name: smart-ops-backend
     working_dir: /app
     environment:
@@ -34,7 +35,7 @@ services:
       - JWT_SECRET=${JWT_SECRET}
       - FRONTEND_URLS=${FRONTEND_URLS}
     ports:
-      - "5000:5000"
+      - "127.0.0.1:5000:5000"
     networks:
       - node-network
     depends_on:
@@ -42,12 +43,12 @@ services:
         condition: service_healthy
 
   front-end:
-    image: ghcr.io/vmestrada88/smart-ops-front-end:production
+    image: ghcr.io/vmestrada88/smart-ops-front-end:${FRONTEND_TAG:-production}
     container_name: smart-ops-frontend
     environment:
       - VITE_API_URL=${VITE_API_URL}
     ports:
-      - "8080:80"
+      - "127.0.0.1:8080:80"
     networks:
       - node-network
     depends_on:

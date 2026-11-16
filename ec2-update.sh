@@ -1,89 +1,135 @@
 #!/bin/bash
 
-# Script para actualizar la aplicación en EC2 desde production
-# Ejecutar este script EN EL SERVIDOR EC2
+# Actualiza Smart Ops en el EC2 con las imágenes publicadas en GHCR.
+# Se ejecuta EN EL SERVIDOR (lo llama deploy.sh / el workflow de GitHub Actions).
+#
+# Variables opcionales:
+#   SERVICE    all | back-end | front-end   (por defecto: all)
+#   IMAGE_TAG  etiqueta de la imagen a usar (por defecto: production)
+#   GHCR_USER / GHCR_TOKEN  credenciales para descargar imágenes privadas
+#   BACKUP_DIR carpeta de backups (por defecto: ~/backups)
+#   KEEP_BACKUPS cuántos backups pre-deploy conservar (por defecto: 7)
+#
+# Este script NUNCA borra volúmenes ni restaura backups: la base de datos
+# se mantiene intacta entre deploys.
 
-set -e
+set -euo pipefail
+
+SERVICE="${SERVICE:-all}"
+IMAGE_TAG="${IMAGE_TAG:-production}"
+BACKUP_DIR="${BACKUP_DIR:-$HOME/backups}"
+KEEP_BACKUPS="${KEEP_BACKUPS:-7}"
+COMPOSE="docker compose -f docker-compose.prod.yml"
+HEALTH_URL="http://localhost:5000/api/health"
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR"
+
+case "$SERVICE" in
+  all) SERVICES="back-end front-end" ;;
+  back-end|front-end) SERVICES="$SERVICE" ;;
+  *) echo "❌ SERVICE inválido: $SERVICE (usa all, back-end o front-end)"; exit 1 ;;
+esac
 
 echo "======================================"
 echo "Updating Smart Ops on EC2"
+echo "  service:   $SERVICE"
+echo "  image tag: $IMAGE_TAG"
 echo "======================================"
 
-# Detener contenedores actuales
-echo "🛑 Stopping current containers..."
-cd ~/smart-ops-infrastructure
-docker compose -f docker-compose.prod.yml down || true
-# Liberar espacio en disco antes de build/pull
-echo "🧹 Cleaning up unused Docker resources..."
-docker system prune -af --volumes 2>/dev/null || true
-echo "   Disk after cleanup: $(df -h / | tail -1 | awk '{print $5 " used, " $4 " free"}')"
-# Actualizar código desde GitHub (branch production)
-echo "📥 Pulling latest code from production branch..."
-git fetch origin production
-git checkout production
-git reset --hard origin/production
-
-# Verificar variables de entorno de producción
 if [ ! -f .env ]; then
   echo "❌ Missing .env file in $(pwd)"
-  echo "Create it from .env.example and set production secrets before deploy"
+  echo "Create it from .env.production.sample and set production secrets before deploy"
   exit 1
 fi
 
-# Actualizar submodules
-echo "📦 Updating submodules..."
-git submodule update --init --recursive
-git submodule foreach 'git checkout production && git fetch origin && git reset --hard origin/production'
-
-# Restaurar backup de base de datos si existe
-if ls ~/db_backup_*.sql >/dev/null 2>&1; then
-    echo "💾 Restoring database backup..."
-    
-    # Iniciar solo la base de datos
-    docker compose -f docker-compose.prod.yml up -d db
-    sleep 10
-    
-    # Encontrar el archivo de backup más reciente
-    BACKUP_FILE=$(ls -t ~/db_backup_*.sql | head -1)
-    echo "Using backup: $BACKUP_FILE"
-    
-    # Restaurar backup
-    docker exec -i smart-ops-db psql -U postgres -d smartsolution_production < "$BACKUP_FILE"
-    echo "✅ Database restored"
-else
-    echo "⚠️  No database backup found, skipping restore"
+# El workflow ya hizo checkout de production; si se corre a mano, actualizamos aquí.
+if [ "${SKIP_GIT_PULL:-false}" != "true" ]; then
+  echo "📥 Updating infrastructure repo (production)..."
+  git fetch origin production
+  git checkout production
+  git reset --hard origin/production
 fi
 
-# Login to GHCR if credentials provided (GHCR_TOKEN and GHCR_USER)
-if [ -n "$GHCR_TOKEN" ] && [ -n "$GHCR_USER" ]; then
+# 1. Backup de la base ANTES de tocar nada
+if docker ps --format '{{.Names}}' | grep -qx smart-ops-db; then
+  mkdir -p "$BACKUP_DIR"
+  BACKUP_FILE="$BACKUP_DIR/pre-deploy-$(date +%Y%m%d-%H%M%S).sql.gz"
+  echo "💾 Backing up database to $BACKUP_FILE ..."
+  docker exec smart-ops-db sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' | gzip > "$BACKUP_FILE"
+  if [ ! -s "$BACKUP_FILE" ]; then
+    echo "❌ Backup vacío; se cancela el deploy para no arriesgar datos"
+    rm -f "$BACKUP_FILE"
+    exit 1
+  fi
+  # Conservar solo los últimos $KEEP_BACKUPS
+  ls -1t "$BACKUP_DIR"/pre-deploy-*.sql.gz 2>/dev/null | tail -n +"$((KEEP_BACKUPS + 1))" | xargs -r rm -f
+else
+  echo "⚠️  smart-ops-db no está corriendo; no se hace backup (primer arranque)"
+fi
+
+# 2. Login a GHCR
+if [ -n "${GHCR_TOKEN:-}" ] && [ -n "${GHCR_USER:-}" ]; then
   echo "🔐 Logging in to GHCR..."
   echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
 else
-  echo "⚠️  GHCR credentials not set; attempting anonymous pulls (may fail for private images)"
+  echo "⚠️  GHCR credentials not set; attempting anonymous pulls"
 fi
 
-# Pull images and start services
-echo "🔨 Pulling images and starting services..."
-docker compose -f docker-compose.prod.yml pull || true
-# Use no-build to ensure we don't try to build on the server
-docker compose -f docker-compose.prod.yml up -d --no-build
+# 3. Guardar la imagen que corre ahora (para rollback)
+declare -A PREVIOUS_IMAGE
+for svc in $SERVICES; do
+  cid="$($COMPOSE ps -q "$svc" 2>/dev/null || true)"
+  if [ -n "$cid" ]; then
+    PREVIOUS_IMAGE[$svc]="$(docker inspect --format '{{.Image}}' "$cid")"
+  fi
+done
 
-# Esperar a que los servicios estén listos
-echo "⏳ Waiting for services to be ready..."
-sleep 15
+# 4. Descargar imágenes nuevas y reiniciar SOLO los servicios de la app
+export BACKEND_TAG="$IMAGE_TAG" FRONTEND_TAG="$IMAGE_TAG"
+[ "$SERVICE" = "front-end" ] && export BACKEND_TAG=production
+[ "$SERVICE" = "back-end" ] && export FRONTEND_TAG=production
 
-# Verificar estado
+echo "🔨 Pulling images: $SERVICES"
+$COMPOSE pull $SERVICES
+echo "🚀 Starting services..."
+$COMPOSE up -d --no-build db
+$COMPOSE up -d --no-build $SERVICES
+
+# 5. Verificar salud del backend
+healthy=false
+for i in $(seq 1 12); do
+  if curl -fsS "$HEALTH_URL" >/dev/null 2>&1; then healthy=true; break; fi
+  echo "⏳ Waiting for API ($i/12)..."
+  sleep 5
+done
+
+if [ "$healthy" != "true" ]; then
+  echo "❌ Health check failed after deploy"
+  if [ ${#PREVIOUS_IMAGE[@]} -gt 0 ]; then
+    echo "↩️  Rolling back to the previous images..."
+    for svc in "${!PREVIOUS_IMAGE[@]}"; do
+      case "$svc" in
+        back-end) repo=ghcr.io/vmestrada88/smart-ops-back-end; export BACKEND_TAG=rollback ;;
+        front-end) repo=ghcr.io/vmestrada88/smart-ops-front-end; export FRONTEND_TAG=rollback ;;
+      esac
+      docker tag "${PREVIOUS_IMAGE[$svc]}" "$repo:rollback"
+    done
+    $COMPOSE up -d --no-build "${!PREVIOUS_IMAGE[@]}"
+  fi
+  $COMPOSE ps
+  exit 1
+fi
+
+# 6. Limpiar solo imágenes sin uso (nunca volúmenes)
+echo "🧹 Removing unused images..."
+docker image prune -af >/dev/null 2>&1 || true
+echo "   Disk: $(df -h / | tail -1 | awk '{print $5 " used, " $4 " free"}')"
+
 echo "📊 Service status:"
-docker compose -f docker-compose.prod.yml ps
+$COMPOSE ps
 
 echo ""
 echo "======================================"
 echo "✅ Update completed!"
 echo "======================================"
-echo ""
-echo "Services should be available at:"
-echo "  Frontend: http://$(curl -s ifconfig.me)"
-echo "  Backend API: http://$(curl -s ifconfig.me):5000"
-echo ""
-echo "Check logs with:"
-echo "  docker compose -f docker-compose.prod.yml logs -f"
